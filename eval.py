@@ -164,5 +164,5 @@ def val_(model):
     print(f"AP50\nPedestrian:{ap0}\nCyclist:{ap1}\nCar:{ap2}\nAll:{apa}\nAP75:{apaa}\nmap:{map}\nmap75:{map75}")
     return apa
 
-model = torch.load("best_0.9593929224523021.pth")
+model = torch.load("best_0.9154486064343456.pth")
 val_(model)
