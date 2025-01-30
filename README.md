@@ -1,4 +1,4 @@
-[Toward RAW Object Detection: A New Benchmark and a New Model,CVPR2023](https://openaccess.thecvf.com/content/CVPR2023/html/Xu_Toward_RAW_Object_Detection_A_New_Benchmark_and_a_New_CVPR_2023_paper.html)
+
 
 **AP50:**
     
