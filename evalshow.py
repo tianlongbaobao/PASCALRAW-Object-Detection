@@ -6,65 +6,26 @@ import warnings
 warnings.filterwarnings("ignore")
 from model.utils import postprocess
 from dataset.demosaic import GrayWorldWB,Demosaic
-from model.yolox import YOLOX
+from nets.frcnn import FasterRCNN
+from utils.utils_bbox import DecodeBox
 
-input_size = 960
-model = YOLOX()
-torch.manual_seed(0)
-model = torch.load("best_0.9113741187023321.pth")
-model.eval()
+input_size = 512
+model = FasterRCNN(3,anchor_scales=[8, 16, 32],backbone="resnet50",pretrained=False,mode="predict")
+model.load_state_dict(torch.load("best.pth"))
 model.cuda()
+model.eval()
 
 def load_raw(name,input_size):
-    BIT8, BIT16, BIT24 = 2 ** 8, 2 ** 16, 2 ** 24
     fn = name
-    raw = np.fromfile(fn, dtype=np.uint8)
-    raw = raw.reshape(1856, 2880, 3).astype(np.float32)
-    raw = np.split(raw, 3, axis=2)
-    raw = (raw[0] + raw[1] * BIT8 + raw[2] * BIT16)
-    raw_data = raw.transpose(2, 0, 1)
-    raw_data = np.expand_dims(raw_data, axis=0)
-    raw_data = Tensor(raw_data).cuda()
-    demosaic = Demosaic()
-    rgb_hdr_data = demosaic(raw_data)
-    rgb_hdr_data = rgb_hdr_data.cpu()
-    rgb_hdr_data = np.array(rgb_hdr_data)
-    bgr_hdr_data = rgb_hdr_data[:, ::-1, :, :]
-    bgr_hdr_data = bgr_hdr_data.squeeze()
-    bgr_hdr_data = bgr_hdr_data.transpose(1, 2, 0)
-    bgr_ldr_img = bgr_hdr_data / (BIT24 - 1)
-    rgb_ldr_img = cv2.resize(bgr_ldr_img, (input_size, input_size))
+    rgb_ldr_img = cv2.imread(fn)
+    rgb_ldr_img = cv2.resize(rgb_ldr_img, (input_size, input_size))
     rgb_ldr_img = rgb_ldr_img.transpose(2, 0, 1)
-    return Tensor(rgb_ldr_img)
+    return Tensor(rgb_ldr_img/255.0)
 
 def load_raw_show(name,input_size):
-    BIT8, BIT16, BIT24 = 2 ** 8, 2 ** 16, 2 ** 24
     fn = name
-    raw = np.fromfile(fn, dtype=np.uint8)
-    raw = raw.reshape(1856, 2880, 3).astype(np.float32)
-    raw = np.split(raw, 3, axis=2)
-    raw = (raw[0] + raw[1] * BIT8 + raw[2] * BIT16)
-    raw_data = raw.transpose(2, 0, 1)
-    raw_data = np.expand_dims(raw_data, axis=0)
-    raw_data = Tensor(raw_data).cuda()
-    demosaic = Demosaic()
-    rgb_hdr_data = demosaic(raw_data)
-    # print(rgb_hdr_data)
-    AWB = GrayWorldWB()
-    rgb_hdr_data = AWB(rgb_hdr_data)
-    rgb_hdr_data = rgb_hdr_data.cpu().numpy()
-    rgb_hdr_data = np.array(rgb_hdr_data)
-    bgr_hdr_data = rgb_hdr_data[:, ::-1, :, :]
-    bgr_hdr_data = bgr_hdr_data.squeeze()
-    bgr_hdr_data = bgr_hdr_data.transpose(1, 2, 0)
-    tonemap = cv2.createTonemapReinhard(gamma=3.1, intensity=-5, light_adapt=0.2, color_adapt=0.0)
-    bgr_ldr_img = tonemap.process(bgr_hdr_data)
-    bgr_ldr_img = np.clip(bgr_ldr_img * 255, 0, 255).astype('uint8')
-    result, encoded_image = cv2.imencode('.jpg', bgr_ldr_img, [int(cv2.IMWRITE_JPEG_QUALITY), 99])
-    nparr = np.frombuffer(encoded_image, np.uint8)
-    bgr_ldr_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    #rgb_ldr_img = bgr_ldr_img[:, :, ::-1]
-    rgb_ldr_img = cv2.resize(bgr_ldr_img, (input_size, input_size))
+    rgb_ldr_img = cv2.imread(fn)
+    rgb_ldr_img = cv2.resize(rgb_ldr_img, (input_size, input_size))
     return rgb_ldr_img
 def show(img):
     cv2.namedWindow("image",cv2.WINDOW_NORMAL)
@@ -72,18 +33,20 @@ def show(img):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-path = "C:/Users/luzhiyi/Desktop/train/day-02528.raw"
+path = "C:/Users/luzhiyi/Desktop/jpg/2014_000006.jpg"
 
 img_s = load_raw_show(path,input_size)
 img = load_raw(path,input_size)
 img = img.unsqueeze(0).cuda()
-outputs,imgout = model(img)
-imgout = imgout.detach().cpu().numpy()
-result = postprocess(outputs,5,conf_thre=0.01,nms_thre=0.45)
-result = result[0]
-for i in range(len(result)):
-    o = result[i]
-    if o[6] == 2:
-        cv2.rectangle(img_s,(int(o[0]),int(o[1])),(int(o[2]),int(o[3])),(255,0,0),2)
+bbox_util = DecodeBox(torch.tensor([0.1, 0.1, 0.2, 0.2],device="cuda").repeat(3 + 1)[None], 3)
+with torch.no_grad():
+    roi_cls_locs, roi_scores, rois, roi_indices = model(img)
+results = bbox_util.forward(roi_cls_locs, roi_scores, rois, [512,512], (512, 512),
+                                     nms_iou=0.5, confidence=0.3)
+train_label = np.array(results[0][:, 5], dtype='int32')
+train_conf = results[0][:, 4]
+train_reg = results[0][:, :4]
+print(train_reg)
+for i in train_reg:
+    cv2.rectangle(img_s,(int(i[1]),int(i[0])),(int(i[3]),int(i[2])),(255,0,0),2)
 show(img_s)
-show(imgout[0].transpose(1, 2, 0))

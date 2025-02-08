@@ -1,9 +1,8 @@
 import glob
 import os
 import numpy as np
-import torch
 import cv2
-from .demosaic import  demosaic,GrayWorldWB
+from .demosaic import  demosaic
 from torch.utils.data import Dataset, DataLoader
 import rawpy
 import xml.etree.ElementTree as ET
@@ -11,8 +10,8 @@ import xml.etree.ElementTree as ET
 
 class dataset(Dataset):
     def __init__(self,is_train):
-        path = 'C:/Users/luzhiyi/Desktop/jpg'
-        self.flist = glob.glob(os.path.join(path, '*.jpg'))
+        path = 'C:/Users/luzhiyi/Desktop/raw'
+        self.flist = glob.glob(os.path.join(path, '*.nef'))
         d = []
         if is_train==False:
             for i in range(len(self.flist)):
@@ -70,9 +69,9 @@ def load_anno(name,input_size):
             ymax = int(float(xmlbox.find("ymax").text))
             bo.append(klass)
             bo.append(input_size * xmin / 600)
-            bo.append(input_size * ymax / 400)
-            bo.append(input_size * xmax / 600)
             bo.append(input_size * ymin / 400)
+            bo.append(input_size * xmax / 600)
+            bo.append(input_size * ymax / 400)
             bo = np.array(bo)
             po.append(bo)
         po = np.array(po)
@@ -80,49 +79,26 @@ def load_anno(name,input_size):
     return a
 
 def load_raw(name,input_size):
+    BIT12 = 2**12
     a = []
-    #AWB = GrayWorldWB()
     for i in range(len(name)):
         fn = name[i]
-        '''raw = rawpy.imread(fn)
+        raw = rawpy.imread(fn)
         im = raw.raw_image.astype(np.float32)
         raw_data = np.expand_dims(np.array(im),axis=0)
         rgb_hdr_data = demosaic(raw_data)
-        rgb_hdr_data = torch.from_numpy(rgb_hdr_data).unsqueeze(0)
-        rgb_hdr_data = AWB(rgb_hdr_data)
-        rgb_hdr_data = rgb_hdr_data.squeeze(0).detach().numpy()
-        bgr_hdr_data = rgb_hdr_data[::-1, :, :]
-        bgr_hdr_data = bgr_hdr_data.transpose(1, 2, 0)
-        tonemap = cv2.createTonemapReinhard(gamma=3.1, intensity=-5, light_adapt=0.2, color_adapt=0.0)
-        bgr_ldr_img = tonemap.process(bgr_hdr_data)
-        bgr_ldr_img = np.clip(bgr_ldr_img * 255, 0, 255).astype('uint8')
-        bgr_ldr_img = cv2.resize(bgr_ldr_img, (input_size, input_size))
-        rgb_ldr_img = bgr_ldr_img[:, :, ::-1]
-        rgb_ldr_img = rgb_ldr_img.transpose(2, 0, 1)'''
-        rgb_ldr_img = cv2.imread(fn)
-        rgb_ldr_img = cv2.resize(rgb_ldr_img, (input_size, input_size))
+        bgr_hdr_data = rgb_hdr_data.transpose(1, 2, 0)
+        bgr_ldr_img = bgr_hdr_data / (BIT12 - 1)
+        rgb_ldr_img = cv2.resize(bgr_ldr_img, (input_size, input_size))
         rgb_ldr_img = rgb_ldr_img.transpose(2, 0, 1)
-        a.append(rgb_ldr_img/255.0)
+        a.append(rgb_ldr_img)
     return np.array(a)
 
 def change(label):
-    for i in range(len(label)):
-        a = label[i]
-        for j in range(a.shape[0]):
-            b = a[j]
-            xmin = b[1]
-            ymax = b[2]
-            xmax = b[3]
-            ymin = b[4]
-            label[i][j][1] = (xmin+xmax)/2
-            label[i][j][2] = (ymin+ymax)/2
-            label[i][j][3] = xmax - xmin
-            label[i][j][4] = ymax - ymin
-        if label[i].shape[0] == 0:
-            label[i] = np.array([[0, 0, 0, 0, 0]])
-        for j in range(label[i].shape[0],70):
-            bo = np.array([[0, 0, 0, 0, 0]])
-            label[i] = np.concatenate((label[i], bo), axis=0)
-    label = np.array(label)
-    return label
+    boxes = []
+    labels = []
+    for i in label:
+        boxes.append(i[:,1:5])
+        labels.append(i[:,0])
+    return boxes, labels
 
