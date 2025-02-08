@@ -136,7 +136,7 @@ class Dataset:
                 np.clip(mosaic_labels[:, 3], 0, 2 * input_w, out=mosaic_labels[:, 3])
                 np.clip(mosaic_labels[:, 4], 0, 2 * input_h, out=mosaic_labels[:, 4])
 
-            mosaic_img, mosaic_labels = self.random_affine(
+            '''mosaic_img, mosaic_labels = self.random_affine(
                 mosaic_img,
                 mosaic_labels,
                 target_size=(input_w, input_h),
@@ -144,13 +144,13 @@ class Dataset:
                 translate=self.translate,
                 scales=self.scale,
                 shear=self.shear,
-            )
-            if (
+            )'''
+            '''if (
                 self.enable_mixup
                 and not len(mosaic_labels) == 0
                 and random.random() < self.mixup_prob
             ):
-                mosaic_img, mosaic_labels = self.mixup(mosaic_img, mosaic_labels, self.input_dim)
+                mosaic_img, mosaic_labels = self.mixup(mosaic_img, mosaic_labels, self.input_dim)'''
             mix_img, padded_labels = self.preproc(mosaic_img, mosaic_labels, self.input_dim)
             img_info = (mix_img.shape[1], mix_img.shape[0])
             return mix_img, padded_labels, img_info, img_id
@@ -169,38 +169,9 @@ def augment_batch(images, labels, input_dim):
     for i in range(images.shape[0]):
         img, label, _, _ = dataset[i]
         label = np.array(label)
-        c = label.shape[0]
-        for i in range(c):
-            xmin = label[i][1]
-            ymax = label[i][2]
-            xmax = label[i][3]
-            ymin = label[i][4]
-            label[i][1] = (xmin + xmax) / 2
-            label[i][2] = (ymin + ymax) / 2
-            label[i][3] = xmax - xmin
-            label[i][4] = ymax - ymin
-        csize = 400
-        while(c>70):
-            clabel = []
-            for i in range(c):
-                if (label[i][3]*label[i][4]>csize):
-                    clabel.append(label[i])
-            label = np.array(clabel)
-            c = label.shape[0]
-            csize = csize+400
-        d = label.shape[0]
-        if d == 0:
-            label = np.array([[0,0,0,0,0]])
-            d = d+1
-        for i in range(d, 70):
-            bo = np.array([[0,0,0,0,0]])
-            label = np.concatenate((label, bo), axis=0)
         img = img.transpose((2, 0, 1))
         augmented_images.append(img)
         augmented_labels.append(label)
-
-    augmented_images = np.array(augmented_images)
-    augmented_labels = np.array(augmented_labels)
 
     return augmented_images, augmented_labels
 

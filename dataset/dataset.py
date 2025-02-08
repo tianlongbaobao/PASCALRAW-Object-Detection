@@ -1,11 +1,9 @@
 import glob
 import os
 import numpy as np
-import torch
 import cv2
-from .demosaic import  demosaic,GrayWorldWB
+from sympy.codegen.ast import float32
 from torch.utils.data import Dataset, DataLoader
-import rawpy
 import xml.etree.ElementTree as ET
 
 
@@ -70,9 +68,9 @@ def load_anno(name,input_size):
             ymax = int(float(xmlbox.find("ymax").text))
             bo.append(klass)
             bo.append(input_size * xmin / 600)
-            bo.append(input_size * ymax / 400)
-            bo.append(input_size * xmax / 600)
             bo.append(input_size * ymin / 400)
+            bo.append(input_size * xmax / 600)
+            bo.append(input_size * ymax / 400)
             bo = np.array(bo)
             po.append(bo)
         po = np.array(po)
@@ -106,23 +104,10 @@ def load_raw(name,input_size):
     return np.array(a)
 
 def change(label):
-    for i in range(len(label)):
-        a = label[i]
-        for j in range(a.shape[0]):
-            b = a[j]
-            xmin = b[1]
-            ymax = b[2]
-            xmax = b[3]
-            ymin = b[4]
-            label[i][j][1] = (xmin+xmax)/2
-            label[i][j][2] = (ymin+ymax)/2
-            label[i][j][3] = xmax - xmin
-            label[i][j][4] = ymax - ymin
-        if label[i].shape[0] == 0:
-            label[i] = np.array([[0, 0, 0, 0, 0]])
-        for j in range(label[i].shape[0],70):
-            bo = np.array([[0, 0, 0, 0, 0]])
-            label[i] = np.concatenate((label[i], bo), axis=0)
-    label = np.array(label)
-    return label
+    boxes = []
+    labels = []
+    for i in label:
+        boxes.append(i[:,1:5])
+        labels.append(i[:,0])
+    return boxes, labels
 

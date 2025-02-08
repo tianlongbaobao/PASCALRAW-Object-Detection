@@ -3,13 +3,13 @@ import cv2
 from torch import  Tensor
 import numpy as np
 import xml.etree.ElementTree as ET
-import rawpy
+from nets.frcnn import FasterRCNN
+
 from tqdm import *
 import warnings
-
+from utils.utils_bbox import DecodeBox
 warnings.filterwarnings("ignore")
 from model.utils import postprocess,bboxes_iou
-from dataset.demosaic import demosaic,GrayWorldWB
 from dataset.dataset import create_dataset_val
 torch.manual_seed(1)
 input_size = 512
@@ -59,20 +59,14 @@ def show(img):
     cv2.destroyAllWindows()
 def classify(model,img,val_reg,val_label,all,zero,one,two,zeroc,onec,twoc):
     model.eval()
-    result = model(img)
-    result = postprocess(result,5,conf_thre=0.0001,nms_thre=0.45)
-    result = result[0].cpu()
-    results = result.detach().numpy()
-    train_reg = []
-    train_label = []
-    train_conf = []
-    for i in range(results.shape[0]):
-        train_reg.append(results[i][0:4])
-        train_label.append(results[i][6])
-        train_conf.append(results[i][4]*results[i][5])
-    train_reg = np.array(train_reg)
-    train_label = np.array(train_label)
-    train_conf = np.array(train_conf)
+    bbox_util = DecodeBox(torch.tensor([0.1, 0.1, 0.2, 0.2],device="cuda").repeat(3 + 1)[None], 3)
+    with torch.no_grad():
+        roi_cls_locs, roi_scores, rois, roi_indices = model(img)
+    results = bbox_util.forward(roi_cls_locs, roi_scores, rois, [512,512], (512, 512),
+                                     nms_iou=0.5, confidence=0.1)
+    train_label = np.array(results[0][:, 5], dtype='int32')
+    train_conf = results[0][:, 4]
+    train_reg = results[0][:, :4]
     for i in val_label:
         if int(i.item()) == 0:
             zeroc += 1
@@ -81,6 +75,7 @@ def classify(model,img,val_reg,val_label,all,zero,one,two,zeroc,onec,twoc):
         elif int(i.item()) == 2:
             twoc += 1
     val_reg = val_reg[:,[0,3,2,1]]
+    train_reg = train_reg[:,[1,0,3,2]]
     iou = bboxes_iou(Tensor(val_reg), Tensor(train_reg), True)
     for i in range((iou.shape)[0]):
         maxiou = iou[i][0]
@@ -125,7 +120,9 @@ def test(result,sam,b):
         recall.append(tp/sam)
     ap = np.trapz(precision,recall)+(1-recall[-1])*precision[-1]/2
     return ap
-def val_(model):
+def val_():
+    model = FasterRCNN(3,anchor_scales=[8, 16, 32],backbone="resnet50",pretrained=False,mode="predict")
+    model.load_state_dict(torch.load("best_0.9254717891560675.pth"))
     model.cuda()
     model.eval()
     input_size = 512
@@ -144,7 +141,10 @@ def val_(model):
         img = img.float()
         val_reg,val_label = load_anno(path[0])
         if  np.array(val_reg).shape[0] != int(0):
-            zeroc,onec,twoc=classify(model,img,val_reg,val_label,all,zero,one,two,zeroc,onec,twoc)
+            try:
+                zeroc,onec,twoc=classify(model,img,val_reg,val_label,all,zero,one,two,zeroc,onec,twoc)
+            except:
+                pass
     allc = zeroc+onec+twoc
     print(f"person:{zeroc},bicycle:{onec},car:{twoc},All:{allc}")
     ap0 = test(zero, zeroc, 0.5)
@@ -164,5 +164,4 @@ def val_(model):
     print(f"AP50\nPedestrian:{ap0}\nCyclist:{ap1}\nCar:{ap2}\nAll:{apa}\nAP75:{apaa}\nmap:{map}\nmap75:{map75}")
     return apa
 
-model = torch.load("best_0.9593929224523021.pth")
-val_(model)
+val_()
